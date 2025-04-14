@@ -1,6 +1,6 @@
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger(__name__)
@@ -78,12 +78,13 @@ class NYTimesSource:
                 self.incremental_start_time = datetime.strptime(
                     max_inc_value, self.TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
                 self.new_latest_timestamp = self.incremental_start_time
-                begin_date = self.incremental_start_time.strftime(self.API_DATE_FORMAT)
+                
+                one_day_before = (self.incremental_start_time - timedelta(days=1))
+                begin_date = one_day_before.strftime(self.API_DATE_FORMAT)
                 self.query_params['begin_date'] = begin_date
                 
-                # Changing sort order to oldest when using incremental marker to filter on the API side ensuring we are pulling articles starting from the marker date
-                self.query_params['sort'] = 'oldest'
-                log.info(f"Incremental loading enabled with begin_date={begin_date}, sort=oldest")
+                # Keep newest sort order
+                log.info(f"Incremental loading enabled with begin_date={begin_date} and timestamp marker: {max_inc_value}")
             except ValueError:
                 log.error("Invalid timestamp format. Disabling incremental loading.")
                 self.incremental_start_time = None
@@ -144,7 +145,7 @@ class NYTimesSource:
             if not docs:
                 break
             
-            # Check incremental cutoff
+            # Check incremental cutoff 
             if self.incremental_start_time and docs[0].get('pub_date'):
                 try:
                     first_time = datetime.strptime(
@@ -166,7 +167,7 @@ class NYTimesSource:
                     try:
                         article_time = datetime.strptime(
                             pub_date, self.TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
-                        if article_time < self.incremental_start_time:
+                        if article_time <= self.incremental_start_time:
                             continue
                     except ValueError:
                         article_time = None
